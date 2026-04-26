@@ -13,7 +13,7 @@ def median_heuristic_sigma(Xs, Xt, eps=1e-8):
 
 def _rbf_kernel(Xs, Xt, sigma):
     Z = tr.cat((Xs, Xt), 0)
-    ZZT = tr.mm(Z, Z.T) # 矩阵乘
+    ZZT = tr.mm(Z, Z.T) 
     diag_ZZT = tr.diag(ZZT).unsqueeze(1) 
     Z_norm_sqr = diag_ZZT.expand_as(ZZT)
     exponent = Z_norm_sqr - 2 * ZZT + Z_norm_sqr.T
