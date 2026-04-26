@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+import torch as tr
+def median_heuristic_sigma(Xs, Xt, eps=1e-8):
+
+    Z = tr.cat((Xs, Xt), dim=0)  # [N, D]
+    with tr.no_grad():
+        dist2 = tr.cdist(Z, Z, p=2.0) ** 2  # [N, N]
+        # 去掉对角线 0
+        mask = ~tr.eye(dist2.size(0), dtype=tr.bool, device=dist2.device)
+        vals = dist2[mask]
+        sigma0 = tr.sqrt(tr.median(vals) + eps) #tr.median(vals) + eps #tr.sqrt(tr.median(vals) + eps)
+    return sigma0
+
+def _primal_kernel(Xs, Xt):
+    Z = tr.cat((Xs.T, Xt.T), 1)  # Xs / Xt: batch_size * k
+    return Z
+
+
+def _linear_kernel(Xs, Xt):
+    Z = tr.cat((Xs, Xt), 0)  # Xs / Xt: batch_size * k
+    K = tr.mm(Z, Z.T)
+    return K
+
+
+def _rbf_kernel(Xs, Xt, sigma):
+    Z = tr.cat((Xs, Xt), 0)
+    ZZT = tr.mm(Z, Z.T) # 矩阵乘
+    diag_ZZT = tr.diag(ZZT).unsqueeze(1) # 取对角矩阵
+    Z_norm_sqr = diag_ZZT.expand_as(ZZT)# 扩张张量形状
+    exponent = Z_norm_sqr - 2 * ZZT + Z_norm_sqr.T
+    K = tr.exp(-exponent / (2 * sigma ** 2))
+    return K
+
+def _multi_rbf_kernel(Xs, Xt, sigma_list):
+    Z = tr.cat((Xs, Xt), 0)
+    ZZT = tr.mm(Z, Z.T)
+    diag_ZZT = tr.diag(ZZT).unsqueeze(1)
+    Z_norm_sqr = diag_ZZT.expand_as(ZZT)
+    exponent = Z_norm_sqr - 2 * ZZT + Z_norm_sqr.T
+
+    K = 0.0
+    for sigma in sigma_list:
+        K = K + tr.exp(-exponent / (2 * sigma ** 2))
+    return K
+
+def rbf_mmd(Xs, Ys, Xt, Yt0, factor, eps=1e-8):
+    sigma0 = median_heuristic_sigma(Xs, Xt)   # 保持 tensor
+    sigma =  sigma0 * factor #
+
+    Yt0 = Yt0[:len(Xt), :]
+
+    K = _rbf_kernel(Xs, Xt, sigma)
+
+    # 构造 e 向量
+    e = tr.cat((
+        Ys / (Ys.sum() + eps),
+        -Yt0 / (Yt0.sum() + eps)
+    ), dim=0)
+
+    # 构造 M 矩阵
+    M = e @ e.T
+    M = M / (tr.norm(M, p='fro')+ eps) #  + eps
+
+    # 直接在当前 device 上计算
+    tmp = tr.mm(tr.mm(K, M), K.T)
+    loss = tr.trace(tmp)
+
+    return loss
